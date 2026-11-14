@@ -28,8 +28,8 @@
         }
         else if (!postData && url.indexOf(HENTAI_MAMA) === 0) {
             if (url.indexOf(HENTAI_MAMA + '/tvshows/') === 0 || url.indexOf(HENTAI_MAMA + '/episodes/') === 0) {
-                // Reader omits episode rows from show pages; those parsers need raw HTML.
-                candidates.push(HENTASIS_PROXY + encodeURIComponent(url), HENTAI_MAMA_READER + url);
+                // Reader's default Markdown omits episode rows; request original HTML.
+                candidates = [HENTAI_MAMA_READER + url, url, HENTASIS_PROXY + encodeURIComponent(url)];
             }
             else {
                 // Prefer Reader output for catalog pages; raw HTML may not match the parser.
@@ -54,6 +54,9 @@
                 type: postData ? 'POST' : 'GET',
                 data: postData || undefined,
                 dataType: isJson ? 'json' : 'text',
+                headers: target.indexOf(HENTAI_MAMA_READER) === 0 &&
+                    (url.indexOf(HENTAI_MAMA + '/tvshows/') === 0 || url.indexOf(HENTAI_MAMA + '/episodes/') === 0)
+                    ? { 'X-Respond-With': 'html' } : undefined,
                 timeout: 30000,
                 success: success,
                 error: next
