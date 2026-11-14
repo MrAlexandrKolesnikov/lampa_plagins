@@ -27,7 +27,9 @@
             candidates.push(HENTASIS_READER + url, HENTASIS_PROXY + encodeURIComponent(url));
         }
         else if (!postData && url.indexOf(HENTAI_MAMA) === 0) {
-            if (url.indexOf(HENTAI_MAMA + '/tvshows/') === 0 || url.indexOf(HENTAI_MAMA + '/episodes/') === 0) {
+            if (url.indexOf(HENTAI_MAMA + '/tvshows/') === 0 ||
+                url.indexOf(HENTAI_MAMA + '/episodes/') === 0 ||
+                url.indexOf(HENTAI_MAMA + '/?dt_embed=') === 0) {
                 // Reader's default Markdown omits episode rows; request original HTML.
                 candidates = [HENTAI_MAMA_READER + url, url, HENTASIS_PROXY + encodeURIComponent(url)];
             }
@@ -37,7 +39,8 @@
             }
         }
         else if (postData && url.indexOf(HENTAI_MAMA) === 0) {
-            candidates.push(HENTAI_MAMA_POST_PROXY + encodeURIComponent(url));
+            var proxyKey = Lampa.Storage.get('hent_mama_proxy_key') || '';
+            candidates.push(HENTAI_MAMA_POST_PROXY + encodeURIComponent(url) + (proxyKey ? '&key=' + encodeURIComponent(proxyKey) : ''));
         }
 
         var index = 0;
@@ -55,7 +58,9 @@
                 data: postData || undefined,
                 dataType: isJson ? 'json' : 'text',
                 headers: target.indexOf(HENTAI_MAMA_READER) === 0 &&
-                    (url.indexOf(HENTAI_MAMA + '/tvshows/') === 0 || url.indexOf(HENTAI_MAMA + '/episodes/') === 0)
+                    (url.indexOf(HENTAI_MAMA + '/tvshows/') === 0 ||
+                    url.indexOf(HENTAI_MAMA + '/episodes/') === 0 ||
+                    url.indexOf(HENTAI_MAMA + '/?dt_embed=') === 0)
                     ? { 'X-Respond-With': 'html' } : undefined,
                 timeout: 30000,
                 success: success,
@@ -206,7 +211,7 @@
             }
             var embedUrl = decodeHtml(embed[1]).replace(/\\\//g, '/').replace(/&amp;/g, '&');
             request(embedUrl, function (page) {
-                var source = String(page || '').match(/"file"\s*:\s*"(https?:[^" ]+?\.(?:mp4|m3u8|mpd)(?:\?[^" ]*)?)"/i);
+                var source = String(page || '').match(/\bfile\s*:\s*"?(https?:[^"'\s]+?\.(?:mp4|m3u8|mpd)(?:\?[^"'\s]*)?)"?/i);
                 if (!source) {
                     Lampa.Noty.show('Видеопоток не найден');
                     return;
@@ -219,6 +224,20 @@
         }, function () {
             Lampa.Noty.show('Не удалось запросить зеркало HentaiMama');
         }, { action: 'get_player_contents', a: id, i: mirror });
+    }
+
+    function setMamaProxyKey() {
+        Lampa.Input.edit({
+            title: 'API-ключ CorsProxy.io для HentaiMama',
+            value: Lampa.Storage.get('hent_mama_proxy_key') || '',
+            placeholder: 'Введите API-ключ',
+            free: true,
+            onBack: function () { Lampa.Controller.toggle('content'); },
+            onEnter: function (value) {
+                Lampa.Storage.set('hent_mama_proxy_key', String(value || '').trim());
+                Lampa.Noty.show('Ключ CorsProxy.io сохранён');
+            }
+        });
     }
 
     function playHentasis(video) {
@@ -265,10 +284,49 @@
         var loading = false;
         var maxPage = 1;
         var alive = true;
+        var focusIndex = 0;
         var source = object.source || 'hentabaza';
         var baseUrl = object.query
             ? API + '/search.php?q=' + encodeURIComponent(object.query)
             : API + '/trending.php?sort=' + encodeURIComponent(object.sort || 'latest');
+
+        function focusItem(index) {
+            var items = scroll.render().find('.selector');
+            if (!items.length) return;
+            focusIndex = Math.max(0, Math.min(index, items.length - 1));
+            items.removeClass('focus');
+            var item = items.eq(focusIndex);
+            item.addClass('focus').trigger('hover:focus');
+            scroll.update(item[0]);
+        }
+
+        function activateFocused() {
+            var item = scroll.render().find('.selector').eq(focusIndex);
+            if (item.length) item.trigger('hover:enter');
+        }
+
+        function enableListControls() {
+            if (Lampa.Controller.add && Lampa.Controller.toggle) {
+                Lampa.Controller.add('hentabaza_items', {
+                    toggle: function () { focusItem(focusIndex); },
+                    up: function () { focusItem(focusIndex - 1); },
+                    down: function () { focusItem(focusIndex + 1); },
+                    left: function () {},
+                    right: function () {},
+                    enter: activateFocused,
+                    back: function () { Lampa.Activity.backward(); }
+                });
+                Lampa.Controller.toggle('hentabaza_items');
+                focusItem(focusIndex);
+            }
+            else {
+                Lampa.Controller.enable('content');
+                Lampa.Controller.toggle('content');
+                var root = scroll.render();
+                if (Lampa.Controller.collectionSet) Lampa.Controller.collectionSet(root);
+                if (Lampa.Controller.collectionFocus) Lampa.Controller.collectionFocus(root.find('.selector').first(), root);
+            }
+        }
 
         function load(nextPage) {
             if (loading || nextPage > maxPage) return;
@@ -340,16 +398,7 @@
                     if (self.activity && typeof self.activity.empty === 'function') self.activity.empty();
                     else Lampa.Noty.show('В этой категории ничего не найдено');
                 }
-                Lampa.Controller.enable('content');
-                Lampa.Controller.toggle('content');
-                var root = scroll.render();
-                if (page === 1 && results.length) {
-                    if (Lampa.Controller.collectionSet) Lampa.Controller.collectionSet(root);
-                    if (Lampa.Controller.collectionFocus) {
-                        Lampa.Controller.collectionFocus(root.find('.selector').first(), root);
-                    }
-                    else if (Lampa.Controller.focus) Lampa.Controller.focus(root.find('.selector').first());
-                }
+                if (results.length) enableListControls();
             }, function () {
                 if (!alive) return;
                 loading = false;
@@ -383,10 +432,29 @@
             load(page);
             return this.render();
         };
-        this.start = function () {};
-        this.render = function () { return scroll.render(); };
+        this.start = function () { if (scroll.render().find('.selector').length) enableListControls(); };
+        this.render = function () {
+            var root = scroll.render();
+            var element = root[0];
+            if (element && !element.hentWheelHandler) {
+                element.hentWheelHandler = function (event) {
+                    if (Math.abs(event.deltaY) >= Math.abs(event.deltaX)) {
+                        event.preventDefault();
+                        event.stopImmediatePropagation();
+                        scroll.wheel(event.deltaY);
+                    }
+                };
+                element.addEventListener('wheel', element.hentWheelHandler, true);
+            }
+            return root;
+        };
         this.destroy = function () {
             alive = false;
+            var element = scroll.render()[0];
+            if (element && element.hentWheelHandler) {
+                element.removeEventListener('wheel', element.hentWheelHandler, true);
+                delete element.hentWheelHandler;
+            }
             scroll.destroy();
             $('#habaza-style').remove();
         };
@@ -433,6 +501,7 @@
             items: [
                 { title: 'Новые', onSelect: function () { openList((isHentasis ? 'Hentasis' : isMama ? 'HentaiMama' : 'HentaiBaza') + ' — новые', { sort: 'latest', source: source }); } }
             ].concat(isMama ? [
+                { title: 'Настроить прокси для видео', onSelect: setMamaProxyKey },
                 { title: 'Категории', onSelect: showMamaCategories },
                 { title: 'Поиск', onSelect: function () {
                     Lampa.Input.edit({
