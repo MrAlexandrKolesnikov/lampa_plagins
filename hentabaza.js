@@ -27,9 +27,14 @@
             candidates.push(HENTASIS_READER + url, HENTASIS_PROXY + encodeURIComponent(url));
         }
         else if (!postData && url.indexOf(HENTAI_MAMA) === 0) {
-            // Prefer Reader output: HentaiMama's raw HTML can load successfully
-            // through AllOrigins while not matching the catalogue parser.
-            candidates = [HENTAI_MAMA_READER + url, url, HENTASIS_PROXY + encodeURIComponent(url)];
+            if (url.indexOf(HENTAI_MAMA + '/tvshows/') === 0 || url.indexOf(HENTAI_MAMA + '/episodes/') === 0) {
+                // Reader omits episode rows from show pages; those parsers need raw HTML.
+                candidates.push(HENTASIS_PROXY + encodeURIComponent(url), HENTAI_MAMA_READER + url);
+            }
+            else {
+                // Prefer Reader output for catalog pages; raw HTML may not match the parser.
+                candidates = [HENTAI_MAMA_READER + url, url, HENTASIS_PROXY + encodeURIComponent(url)];
+            }
         }
         else if (postData && url.indexOf(HENTAI_MAMA) === 0) {
             candidates.push(HENTAI_MAMA_POST_PROXY + encodeURIComponent(url));
