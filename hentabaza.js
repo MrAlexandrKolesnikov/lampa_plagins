@@ -20,14 +20,14 @@
     function request(url, success, failure, postData) {
         var net = new Lampa.Reguest();
         net.timeout(15000);
-        net.get(url, success, function () {
+        net.silent(url, success, function () {
             if (url.indexOf(HENTAI_MAMA) === 0 && postData) {
-                net.get(HENTAI_MAMA_POST_PROXY + encodeURIComponent(url), success, function () {
+                net.silent(HENTAI_MAMA_POST_PROXY + encodeURIComponent(url), success, function () {
                     if (failure) failure();
                 }, postData);
             }
             else if ((url.indexOf(HENTASIS) === 0 || url.indexOf(HENTAI_MAMA) === 0) && !postData) {
-                net.get(HENTASIS_PROXY + encodeURIComponent(url), success, function () {
+                net.silent(HENTASIS_PROXY + encodeURIComponent(url), success, function () {
                     if (failure) failure();
                 });
             }
