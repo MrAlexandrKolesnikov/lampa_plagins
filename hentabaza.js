@@ -9,6 +9,8 @@
     var HENTASIS = 'https://hentasis1.top';
     var HENTAI_MAMA = 'https://hentaimama.io';
     var HENTASIS_PROXY = 'https://api.allorigins.win/raw?url=';
+    var HENTASIS_READER = 'https://proxy.cors.dev/';
+    var HENTAI_MAMA_READER = 'https://r.jina.ai/';
     var HENTAI_MAMA_POST_PROXY = 'https://corsproxy.io/?url=';
 
     function safeText(value) {
@@ -19,16 +21,23 @@
 
     function request(url, success, failure, postData) {
         var net = new Lampa.Reguest();
-        net.timeout(15000);
+        net.timeout(30000);
         net.silent(url, success, function () {
             if (url.indexOf(HENTAI_MAMA) === 0 && postData) {
                 net.silent(HENTAI_MAMA_POST_PROXY + encodeURIComponent(url), success, function () {
                     if (failure) failure();
                 }, postData);
             }
-            else if ((url.indexOf(HENTASIS) === 0 || url.indexOf(HENTAI_MAMA) === 0) && !postData) {
+            else if (url.indexOf(HENTASIS) === 0 && !postData) {
+                net.silent(HENTASIS_READER + url, success, function () {
+                    net.silent(HENTASIS_PROXY + encodeURIComponent(url), success, failure);
+                });
+            }
+            else if (url.indexOf(HENTAI_MAMA) === 0 && !postData) {
                 net.silent(HENTASIS_PROXY + encodeURIComponent(url), success, function () {
-                    if (failure) failure();
+                    // AllOrigins can be temporarily unavailable. Jina Reader returns
+                    // Markdown, which the HentaiMama parsers below also understand.
+                    net.silent(HENTAI_MAMA_READER + url, success, failure);
                 });
             }
             else if (failure) failure();
@@ -65,7 +74,16 @@
 
     function parseMamaPage(html) {
         var videos = [];
-        var blocks = String(html || '').match(/<article class="item"[\s\S]*?<\/article>/gi) || [];
+        var source = String(html || '');
+        if (source.indexOf('Markdown Content:') !== -1) {
+            var cards = /\[!\[Image \d+: ([^\]]*)\]\((https?:\/\/[^)]+)\)\]\((https?:\/\/[^)]+)\)[\s\S]{0,180}?### \[([^\]]+)\]\((https?:\/\/[^)]+)\)/gi;
+            var card;
+            while ((card = cards.exec(source))) {
+                videos.push({ title: stripHtml(card[4]), page_url: card[3], poster_url: card[2] });
+            }
+            return videos;
+        }
+        var blocks = source.match(/<article class="item"[\s\S]*?<\/article>/gi) || [];
         blocks.forEach(function (block) {
             var link = block.match(/<a href="([^"]+)"[^>]*><img/i);
             var title = block.match(/class="title"[^>]*>([\s\S]*?)<\/h3>/i);
@@ -82,7 +100,15 @@
 
     function mamaCategories(html) {
         var categories = [];
-        var matches = String(html || '').match(/<a[^>]+href="https?:\/\/hentaimama\.io\/genre\/([^/"?#]+)\/?"[^>]*>([\s\S]*?)<\/a>/gi) || [];
+        var source = String(html || '');
+        var markdown = /\[([^\]]+)\]\(https?:\/\/hentaimama\.io\/genre\/([^/)]+)\/?\)/gi;
+        var genre;
+        while ((genre = markdown.exec(source))) {
+            if (!categories.some(function (item) { return item.slug === genre[2]; })) {
+                categories.push({ title: stripHtml(genre[1]), slug: genre[2] });
+            }
+        }
+        var matches = source.match(/<a[^>]+href="https?:\/\/hentaimama\.io\/genre\/([^/"?#]+)\/?"[^>]*>([\s\S]*?)<\/a>/gi) || [];
         matches.forEach(function (match) {
             var data = match.match(/href="https?:\/\/hentaimama\.io\/genre\/([^/"?#]+)\/?"[^>]*>([\s\S]*?)<\/a>/i);
             if (!data) return;
@@ -96,7 +122,15 @@
     function openMamaShow(video) {
         request(video.page_url, function (html) {
             var episodes = [];
-            var links = String(html || '').match(/<a class="dt-se-item" href="[^"]+"[\s\S]*?<\/a>/gi) || [];
+            var source = String(html || '');
+            if (source.indexOf('Markdown Content:') !== -1) {
+                var episodeLinks = /\[([^\]]+)\]\((https?:\/\/hentaimama\.io\/episodes\/[^)]+)\)/gi;
+                var episodeLink;
+                while ((episodeLink = episodeLinks.exec(source))) {
+                    episodes.push({ title: stripHtml(episodeLink[1]), url: episodeLink[2] });
+                }
+            }
+            var links = source.match(/<a class="dt-se-item" href="[^"]+"[\s\S]*?<\/a>/gi) || [];
             links.forEach(function (link) {
                 var href = link.match(/href="([^"]+)"/i);
                 var label = link.match(/<span class="dt-se-title"[^>]*>([\s\S]*?)<\/span>/i) || link.match(/<span class="dt-se-num"[^>]*>([\s\S]*?)<\/span>/i);
@@ -259,20 +293,20 @@
                         '<div class="habaza-info"><div class="habaza-title">' + title + '</div>' +
                         '<div class="habaza-meta">' + safeText(meta) + '</div></div></div>');
 
-                    item.on('hover:enter', function () {
+                    item.on('hover:enter click', function () {
                         if (source === 'hentasis') playHentasis(video);
                         else if (source === 'hentaimama') openMamaShow(video);
                         else openVideo(video);
                     });
                     item.on('hover:focus', function () {
-                        scroll.update();
+                        scroll.update(this);
                     });
                     scroll.append(item);
                 });
 
                 if (results.length && page < maxPage) {
                     var more = $('<div class="selector habaza-more">Загрузить еще</div>');
-                    more.on('hover:enter', function () {
+                    more.on('hover:enter click', function () {
                         more.remove();
                         load(page + 1);
                     });
@@ -306,7 +340,8 @@
 
         this.create = function () {
             $('head').append('<style id="habaza-style">' +
-                '.habaza-item{display:flex;align-items:center;gap:1.2em;padding:0.8em 1em;margin:0.4em 0;background:rgba(255,255,255,.04);border-radius:.3em;min-height:7em}' +
+                '.habaza-item{display:flex;align-items:center;gap:1.2em;padding:0.8em 1em;margin:0.4em 0;background:rgba(255,255,255,.04);border-radius:.3em;min-height:7em;cursor:pointer}' +
+                '.habaza-item.focus,.habaza-more.focus{outline:3px solid rgba(255,255,255,.9);outline-offset:2px}' +
                 '.habaza-poster{width:8em;height:6.5em;flex:0 0 8em;background:#222 center/cover no-repeat;border-radius:.25em}' +
                 '.habaza-info{min-width:0}.habaza-title{font-size:1.1em;line-height:1.35}.habaza-meta{margin-top:.45em;opacity:.55;font-size:.85em}' +
                 '.habaza-more{text-align:center;padding:1em;margin:1em;background:rgba(255,255,255,.06);border-radius:.3em}' +
