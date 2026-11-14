@@ -20,29 +20,41 @@
     }
 
     function request(url, success, failure, postData) {
-        var net = new Lampa.Reguest();
-        net.timeout(30000);
-        net.silent(url, success, function () {
-            if (url.indexOf(HENTAI_MAMA) === 0 && postData) {
-                net.silent(HENTAI_MAMA_POST_PROXY + encodeURIComponent(url), success, function () {
-                    if (failure) failure();
-                }, postData);
+        var candidates = [url];
+        var isJson = url.indexOf(API + '/') === 0;
+
+        if (!postData && url.indexOf(HENTASIS) === 0) {
+            candidates.push(HENTASIS_READER + url, HENTASIS_PROXY + encodeURIComponent(url));
+        }
+        else if (!postData && url.indexOf(HENTAI_MAMA) === 0) {
+            candidates.push(HENTASIS_PROXY + encodeURIComponent(url), HENTAI_MAMA_READER + url);
+        }
+        else if (postData && url.indexOf(HENTAI_MAMA) === 0) {
+            candidates.push(HENTAI_MAMA_POST_PROXY + encodeURIComponent(url));
+        }
+
+        var index = 0;
+        var current;
+        function next() {
+            if (index >= candidates.length) {
+                if (failure) failure();
+                return;
             }
-            else if (url.indexOf(HENTASIS) === 0 && !postData) {
-                net.silent(HENTASIS_READER + url, success, function () {
-                    net.silent(HENTASIS_PROXY + encodeURIComponent(url), success, failure);
-                });
-            }
-            else if (url.indexOf(HENTAI_MAMA) === 0 && !postData) {
-                net.silent(HENTASIS_PROXY + encodeURIComponent(url), success, function () {
-                    // AllOrigins can be temporarily unavailable. Jina Reader returns
-                    // Markdown, which the HentaiMama parsers below also understand.
-                    net.silent(HENTAI_MAMA_READER + url, success, failure);
-                });
-            }
-            else if (failure) failure();
-        }, postData);
-        return net;
+
+            var target = candidates[index++];
+            current = $.ajax({
+                url: target,
+                type: postData ? 'POST' : 'GET',
+                data: postData || undefined,
+                dataType: isJson ? 'json' : 'text',
+                timeout: 30000,
+                success: success,
+                error: next
+            });
+        }
+
+        next();
+        return current;
     }
 
     function decodeHtml(value) {
@@ -239,7 +251,6 @@
     function ListScreen(object) {
         var self = this;
         var scroll = new Lampa.Scroll({ mask: true, over: true });
-        var net;
         var page = Number(object.page) || 1;
         var loading = false;
         var maxPage = 1;
@@ -255,7 +266,6 @@
             page = nextPage;
             self.activity.loader(true);
 
-            if (net) net.clear();
             var url = source === 'hentasis'
                 ? (object.query ? HENTASIS + '/' : HENTASIS + (page === 1 ? '/' : '/page/' + page + '/'))
                 : source === 'hentaimama'
@@ -272,6 +282,9 @@
                 loading = false;
                 self.activity.loader(false);
 
+                if (source === 'hentabaza' && typeof data === 'string') {
+                    try { data = JSON.parse(data); } catch (error) { data = null; }
+                }
                 var results = source === 'hentasis'
                     ? parseHentasisPage(data)
                     : source === 'hentaimama'
@@ -316,6 +329,14 @@
                 if (!results.length && page === 1) self.activity.empty();
                 Lampa.Controller.enable('content');
                 Lampa.Controller.toggle('content');
+                var root = scroll.render();
+                if (page === 1 && results.length) {
+                    if (Lampa.Controller.collectionSet) Lampa.Controller.collectionSet(root);
+                    if (Lampa.Controller.collectionFocus) {
+                        Lampa.Controller.collectionFocus(root.find('.selector').first(), root);
+                    }
+                    else if (Lampa.Controller.focus) Lampa.Controller.focus(root.find('.selector').first());
+                }
             }, function () {
                 if (!alive) return;
                 loading = false;
@@ -353,7 +374,6 @@
         this.render = function () { return scroll.render(); };
         this.destroy = function () {
             alive = false;
-            if (net) net.clear();
             scroll.destroy();
             $('#habaza-style').remove();
         };
