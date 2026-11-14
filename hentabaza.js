@@ -27,7 +27,9 @@
             candidates.push(HENTASIS_READER + url, HENTASIS_PROXY + encodeURIComponent(url));
         }
         else if (!postData && url.indexOf(HENTAI_MAMA) === 0) {
-            candidates.push(HENTASIS_PROXY + encodeURIComponent(url), HENTAI_MAMA_READER + url);
+            // Prefer Reader output: HentaiMama's raw HTML can load successfully
+            // through AllOrigins while not matching the catalogue parser.
+            candidates = [HENTAI_MAMA_READER + url, url, HENTASIS_PROXY + encodeURIComponent(url)];
         }
         else if (postData && url.indexOf(HENTAI_MAMA) === 0) {
             candidates.push(HENTAI_MAMA_POST_PROXY + encodeURIComponent(url));
@@ -326,7 +328,10 @@
                     scroll.append(more);
                 }
 
-                if (!results.length && page === 1) self.activity.empty();
+                if (!results.length && page === 1) {
+                    if (self.activity && typeof self.activity.empty === 'function') self.activity.empty();
+                    else Lampa.Noty.show('В этой категории ничего не найдено');
+                }
                 Lampa.Controller.enable('content');
                 Lampa.Controller.toggle('content');
                 var root = scroll.render();
