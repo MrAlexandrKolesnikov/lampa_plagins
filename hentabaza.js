@@ -277,7 +277,7 @@
                 ? { do: 'search', subaction: 'search', story: object.query }
                 : null;
 
-            net = request(url, function (data) {
+            request(url, function (data) {
                 if (!alive) return;
                 loading = false;
                 self.activity.loader(false);
